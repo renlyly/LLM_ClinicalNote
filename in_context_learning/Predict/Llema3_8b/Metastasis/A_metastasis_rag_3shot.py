@@ -1,0 +1,127 @@
+# Load model directly
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
+import os
+import torch
+import re
+
+extracted_notes = pd.read_csv('/subset_data/filtered_2sen_discharge_notes.csv')
+
+hf_model_name = "ContactDoctor/Bio-Medical-Llama-3-8B"   # modifty to your model path
+
+
+# Load Hugging Face tokenizer and model
+auto_tokenizer = AutoTokenizer.from_pretrained(hf_model_name, use_fast=True)
+#quant_config = BitsAndBytesConfig(load_in_4bit=True)
+quant_config = BitsAndBytesConfig(
+    load_in_8bit=True,                
+    llm_int8_threshold=6.0,           
+    llm_int8_has_fp16_weight=False,   
+    llm_int8_skip_modules=None        
+)
+
+
+auto_model = AutoModelForCausalLM.from_pretrained(
+    hf_model_name,
+    device_map="auto",
+    quantization_config=quant_config)
+
+import sys
+RANDOM_SEED=sys.argv[1]
+torch.manual_seed(RANDOM_SEED)
+torch.cuda.manual_seed_all(RANDOM_SEED)
+
+print(f"Model is loaded on: {auto_model.device}")
+extracted_notes['LLM_class'] = 'Pending'
+
+# Task description for model input
+TASK_DESCRIPTION = """<start_of_turn>user
+Task: Classify the presence of metastasis from patient clinical notes. Respond only with the following numerical codes based on the notes provided:
+- (1) Yes: The notes explicitly confirm the patient has metastasis.
+- (2) No: The notes explicitly confirm the patient does not have metastasis.
+- (3) Unknown: The notes do not contain sufficient information to determine the patient's metastasis status.
+
+Instructions:
+1. Do not provide explanations or reasons for your classification.
+2. Use only the information in the notes for your classification.
+3. If the notes are ambiguous or lack details regarding metastasis, choose "(3) Unknown".
+4. Only provide a single numerical code as the response you must follow this rule.
+
+Examples:
+- Example 1: "Innumerable hepatic and pulmonary metastases.  No obvious primary malignancy is identified on this study." --> (1)
+- Example 2: "New diagnosis of metastatic cancer." --> (1)
+- Example 3: "Ms. ___ is a ___ with metastatic cancer of unknown primary (known lesions in lungs and liver) presenting with shortness of breath." --> (1)
+- Example 4: "No evidence of metastatic disease in the brain." --> (2)
+- Example 5: "No definitive metastatic disease in the chest." --> (2)
+- Example 6: "No metastatic disease." --> (2)
+- Example 7: "___ year old woman who underwent colonoscopy with polypectomy two days prior to presentation." --> (3)
+- Example 8: "She was asymptomatic in the ED and no gross rectal bleeding was noted. Guaiac positive with brown/black stools." --> (3)
+- Example 9: "He has no history of head injury or loss of consciousness." --> (3)
+
+"""
+
+USER_CHAT_TEMPLATE = 'Analyze the following clinical notes to determine if the patient has metastasis status:\n{notes}.<end_of_turn>\n'
+MODEL_CHAT_TEMPLATE = '<start_of_turn> Model: \n'
+
+# Regular expression to match valid responses
+stage_pattern = re.compile(r'\((1|2|3)\)')
+
+# Prepare output paths
+csv_out_path = '/temp/tmp.csv'
+tmp_csv_out_path = csv_out_path
+
+# Processing notes and generating classifications
+for index, row in tqdm(extracted_notes.iterrows(), total=extracted_notes.shape[0], desc="Processing notes"):
+    if row['LLM_class'] == 'Pending':
+        clinical_notes = row['EXTRACTED_TEXT'].strip()
+        prompt = (
+            TASK_DESCRIPTION
+            + USER_CHAT_TEMPLATE.format(notes=clinical_notes)
+            + MODEL_CHAT_TEMPLATE
+        )
+
+        response = ''
+        count = 0
+        error_occurred = False
+        matched_response = None
+
+        while not matched_response and count < 10 and not error_occurred:
+            torch.cuda.empty_cache()
+            try:
+                # Hugging Face Model Prediction
+                inputs = auto_tokenizer(prompt, return_tensors="pt").to(auto_model.device)
+                input_length = inputs["input_ids"].shape[1]
+                hf_outputs = auto_model.generate(**inputs, max_new_tokens=4,do_sample=True,   
+                                                     pad_token_id=auto_tokenizer.eos_token_id,
+                                                    temperature=0.1)
+                hf_response = auto_tokenizer.decode(hf_outputs[0, input_length:], skip_special_tokens=True)
+                hf_match = stage_pattern.search(hf_response)
+
+                # Process Hugging Face result
+                if hf_match:
+                    matched_response = hf_match.group(1)
+                else:
+                    matched_response = "3"
+
+            except Exception as e:
+                torch.cuda.empty_cache()
+                print(f"Error during model generation: {e}")
+                error_occurred = True
+                break
+            count += 1
+             
+        # Update the 'LLM_class' field for the current row
+        extracted_notes.at[index, 'LLM_class'] = matched_response if not error_occurred else '3'
+
+        # Save progress periodically
+        if (index + 1) % 3000 == 0:
+            print(f"Saving progress at index {index}")
+            if os.path.exists(tmp_csv_out_path):
+                os.remove(tmp_csv_out_path)
+            tmp_csv_out_path = csv_out_path.replace('.csv', f'_{index}_progress.csv')
+            extracted_notes.iloc[:index].to_csv(tmp_csv_out_path, index=False)
+
+# Save final results
+extracted_notes.to_csv(f"/results/P1/p1_results_llama70_rag2_21_{RANDOM_SEED}.csv", index=False)

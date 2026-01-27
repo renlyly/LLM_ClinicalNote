@@ -1,12 +1,12 @@
 # LLM-EHR: Clinical Phenotyping with Large Language Models
 
-## Overview
+## overview
 
 This framework evaluates large language models for clinical phenotyping using zero-shot and few-shot learning paradigms on the MIMIC-IV dataset, with comparisons against fine-tuned LLMs. Our preprocessing strategies significantly enhance the performance of smaller LLMs, making them suitable for privacy-sensitive and resource-constrained healthcare applications. This study provides practical guidance for deploying LLMs in local, secure, and efficient healthcare settings while addressing challenges in privacy, computational feasibility, and clinical applicability.
 
 
 
-## Repository Structure
+## Structure
 
 ```
 LLM_Note/

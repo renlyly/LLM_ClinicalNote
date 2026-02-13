@@ -1,194 +1,188 @@
-# LLM-EHR: Clinical Phenotyping with Large Language Models
+# PrecLLM
 
-## overview
+<p align="center">
+  <img src="assets/precllm-logo.png" alt="PrecLLM package icon" width="140" />
+</p>
 
-This framework evaluates large language models for clinical phenotyping using zero-shot and few-shot learning paradigms on the MIMIC-IV dataset, with comparisons against fine-tuned LLMs. Our preprocessing strategies significantly enhance the performance of smaller LLMs, making them suitable for privacy-sensitive and resource-constrained healthcare applications. This study provides practical guidance for deploying LLMs in local, secure, and efficient healthcare settings while addressing challenges in privacy, computational feasibility, and clinical applicability.
+PrecLLM is a production-grade Python package for paper-oriented clinical note phenotyping workflows.
+It is explicitly designed to preserve the core logic from the original project: preprocessing (`regex/rag/nonprocess`), prompt-controlled inference (`0/3/6-shot`), and model-specific execution.
 
+## Workflow Diagram
 
+<p align="center">
+  <img src="assets/precllm-workflow-diagram.png" alt="PrecLLM workflow diagram" width="960" />
+</p>
 
-## Structure
+Diagram legend:
+- Input: note-level CSV data.
+- Preprocess: `regex`, `rag`, or `nonprocess`.
+- Prompting: phenotype-specific prompts with `0`, `3`, or `6` shot settings.
+- Inference backend: `rule` baseline or `transformers` model inference.
+- Outputs: preprocessed CSV, predictions CSV, and manifest JSON.
 
+## What Was Restored and Deepened
+
+- Prompt system is now first-class and explicit.
+- Model invocation path is explicit and configurable.
+- Multi-ID schema support is explicit (`subject_id`, `hadm_id`, etc.).
+- Output preserves source identifiers for audit and downstream merge.
+
+## Prompt System (Core Control)
+
+Prompt source code location:
+- `src/precllm/prompting.py`
+
+This module contains:
+- phenotype-specific task templates (`metastasis`, `insulin`, `hypertension`)
+- shot-aware example selection (`0`, `3`, `6`)
+- deterministic prompt rendering (`build_prompt`)
+
+Legacy alignment:
+- Example counts follow the original script style:
+  - `shot=0` -> 3 examples
+  - `shot=3` -> 9 examples
+  - `shot=6` -> 18 examples
+
+Inspect a prompt directly:
+
+```bash
+python -m precllm prompt \
+  --phenotype metastasis \
+  --shot 6 \
+  --note-text "Patient with known metastatic disease in liver."
 ```
+
+## Model Invocation (Where Models Are Called)
+
+Model backend code location:
+- `src/precllm/llm_backends.py`
+
+Prediction orchestration:
+- `src/precllm/predict.py`
+
+Supported inference backends:
+- `rule`: deterministic baseline (no external LLM dependency)
+- `transformers`: Hugging Face model inference via `AutoTokenizer` and `AutoModelForCausalLM`
+
+Install LLM runtime dependencies when using `transformers` backend:
+
+```bash
+python -m pip install -e '.[llm]'
+```
+
+Default model registry:
+- `gemma-7b` -> `google/gemma-7b-it`
+- `llama2-7b` -> `lianggq/llama-2-7b-chat-med`
+- `llama3-8b` -> `ContactDoctor/Bio-Medical-Llama-3-8B`
+- `llama3-70b` -> `meta-llama/Meta-Llama-3-70B-Instruct`
+
+Override model path when needed:
+- `--model-path <hf_repo_or_local_path>`
+
+## Data Contract and Schema Flexibility
+
+Minimum required data:
+- one text column for clinical notes (`--text-column`)
+- one or more ID columns (`--id-column` or `--id-columns`)
+
+Single-ID example:
+
+```bash
+python -m precllm run \
+  --input-csv your_data.csv \
+  --output-dir outputs \
+  --model llama2-7b \
+  --phenotype metastasis \
+  --preprocess rag \
+  --shot 3 \
+  --id-column note_id \
+  --text-column text \
+  --inference-backend rule
+```
+
+Multi-ID example (`subject_id` + `hadm_id`):
+
+```bash
+python -m precllm run \
+  --input-csv your_data.csv \
+  --output-dir outputs \
+  --model llama2-7b \
+  --phenotype metastasis \
+  --preprocess regex \
+  --shot 3 \
+  --id-columns subject_id,hadm_id \
+  --text-column clinical_note \
+  --inference-backend transformers
+```
+
+How it is handled:
+- all ID columns are validated before run
+- IDs are preserved in outputs
+- `record_id` is generated as a stable composite key from provided IDs
+
+## CLI Reference
+
+List supported options and defaults:
+
+```bash
+python -m precllm catalog
+```
+
+Dry-run with full resolved config and prompt metadata:
+
+```bash
+python -m precllm run \
+  --input-csv examples/sample_input.csv \
+  --output-dir outputs \
+  --model gemma-7b \
+  --phenotype insulin \
+  --preprocess rag \
+  --shot 0 \
+  --id-columns subject_id,hadm_id \
+  --text-column text \
+  --inference-backend rule \
+  --dry-run
+```
+
+## Output Contract
+
+Each run generates:
+- `<run_stem>.preprocessed.csv`
+- `<run_stem>.predictions.csv`
+- `<run_stem>.manifest.json`
+
+`<run_stem>` format:
+- `{model}_{phenotype}_{preprocess}_{shot}shot_seed{seed}`
+
+The output CSV files include:
+- original ID columns
+- `record_id`
+- prediction fields (`label`, `evidence`, `raw_response`)
+
+## Package Layout
+
+```text
 LLM_Note/
-├── fine_tune/                    # Fine-tuning pipeline
-│   ├── 01_load_data.py           # Data loading and preprocessing
-│   ├── 02_model_finetuning.py    # QLoRA fine-tuning implementation
-│   └── 03_classification.py      # Model inference and classification
-│
-└── Context_learning/             # In-context learning experiments
-    ├── Process/                  # Text preprocessing pipelines
-    │   ├── Subset/
-    │   │   ├── P00_generate_subset.py    # Dataset subset generation
-    │   │   ├── P01_extract_notes.py      # Clinical note extraction
-    │   │   ├── P02_RAGsentence.py        # RAG-based text extraction
-    │   │   └── P02_regex.py              # Regex-based text extraction
-    │   └── Metastasis_all/               # Full metastasis dataset processing
-    │
-    └── Predict/                  # Classification experiments by model
-        ├── Gemma_7b/             # Gemma-7B experiments
-        ├── Llema2_7b/            # Llama2-7B experiments
-        ├── Llema3_8b/            # Llama3-8B experiments
-        └── Llema3_70b/           # Llama3-70B experiments
+- assets/
+- examples/
+- src/precllm/
+- tests/
+- pyproject.toml
+- README.md
 ```
 
-## Methods
+## Quality and Governance
 
-### Classification Tasks
+- Strong type hints across package code.
+- Prompt logic and model invocation are separated and auditable.
+- Input schema is validated before execution.
+- Unit tests cover config, CLI, and pipeline behavior.
 
-Three clinical phenotyping tasks are evaluated:
+## License and Compliance
 
-- **Metastasis**: Detection of metastatic cancer presence from clinical notes
-- **Hypertension**: Identification of hypertension diagnosis
-- **Insulin**: Classification of long-term insulin usage status
+This project is licensed under the MIT License (`LICENSE`).
 
-Each task uses a three-class classification scheme:
-- **(1) Yes**: Condition explicitly confirmed in clinical notes
-- **(2) No**: Condition explicitly absent or discontinued
-- **(3) Unknown**: Insufficient information to determine status
-
-### Models
-
-Four open-source large language models are evaluated:
-
-| Model Name | Parameters | Description |
-|------------|------------|-------------|
-| **Gemma-7B** | 7B | Google's instruction-tuned model for general tasks |
-| **LLaMA-2-7B-Chat-Med** | 7B | Meta's LLaMA-2 fine-tuned for medical dialogue |
-| **Bio-Medical-LLaMA-3-8B** | 8B | LLaMA-3 specialized for biomedical text |
-| **Meta-Llama-3-70B-Instruct** | 70B | Meta's largest instruction-following model |
-
-### Experimental Design
-
-**Text Preprocessing Strategies:**
-1. **No Preprocessing** (`nonprocess`): Full discharge summaries without modification
-2. **Regex-based** (`regex`): Sentence extraction using keyword pattern matching for target phenotypes
-3. **RAG-based** (`rag`): Semantic similarity retrieval using sentence embeddings (FAISS + all-MiniLM-L6-v2 encoder)
-
-**Few-shot Learning Settings:**
-- **0-shot**: Task description with 3 generic examples
-- **3-shot**: Task description with 9 examples (3 per class)
-- **6-shot**: Task description with 18 examples (6 per class)
-
-This yields **27 experimental conditions** per model (3 preprocessing × 3 few-shot × 3 tasks), totaling **108 experiments** across all models.
-
-
-## Usage
-
-### Complete Example: Gemma-7B for Metastasis Detection
-
-This example demonstrates the full pipeline for classifying metastatic cancer using Gemma-7B with RAG-based preprocessing and 3-shot learning.
-
-#### Step 1: Preprocess Clinical Notes (RAG-based Extraction)
-
-Extract relevant sentences from discharge summaries using semantic similarity:
-
-```bash
-# Use RAG (Retrieval-Augmented Generation) to extract sentences related to metastasis
-# This creates: /subset_data/filtered_2sen_discharge_notes_metastasis.csv
-python Context_learning/Process/Subset/P02_RAGsentence.py metastasis
-```
-
-**What this does:**
-- Loads discharge summaries from MIMIC-IV
-- Uses FAISS and all-MiniLM-L6-v2 embeddings to find semantically similar sentences
-- Extracts the top 2 most relevant sentences per note
-- Saves preprocessed data with column `EXTRACTED_TEXT`
-
-#### Step 2: Run Classification with In-Context Learning
-
-Execute the Gemma-7B model with 3-shot learning:
-
-```bash
-# Run classification with random seed for reproducibility
-# Output: /results/P1/A02_metastasis_11_T2_p1_[SEED].csv
-python Context_learning/Predict/Gemma_7b/Metastasis/A_metastasis_rag_3shot.py 42
-```
-
-**What this does:**
-- Downloads Gemma-7B-IT weights from KaggleHub
-- Loads the RAG-preprocessed data (`EXTRACTED_TEXT` column)
-- Applies 3-shot prompt with 9 clinical examples (3 per class)
-- Classifies each note as: (1) Yes, (2) No, or (3) Unknown
-- Saves results with `LLM_class` predictions
-- Logs runtime to `/results/P2/`
-
-**Script parameters:**
-- `42`: Random seed for reproducible results
-- Temperature: 0.1 (low temperature for consistent outputs)
-- Max output length: 4 tokens (sufficient for classification codes)
-
-#### Alternative Configurations
-
-**Different preprocessing strategies:**
-```bash
-# No preprocessing (full discharge summary)
-python Context_learning/Predict/Gemma_7b/Metastasis/A_metastasis_nonprocess_3shot.py 42
-
-# Regex-based extraction (keyword matching)
-python Context_learning/Predict/Gemma_7b/Metastasis/A_metastasis_regex_3shot.py 42
-```
-
-**Different few-shot settings:**
-```bash
-# 0-shot learning (minimal examples)
-python Context_learning/Predict/Gemma_7b/Metastasis/A_metastasis_rag_0shot.py 42
-
-# 6-shot learning (maximum examples)
-python Context_learning/Predict/Gemma_7b/Metastasis/A_metastasis_rag_6shot.py 42
-```
-
-**Different models:**
-```bash
-# LLaMA-2-7B-Chat-Med
-python Context_learning/Predict/Llema2_7b/Metastasis/A_metastasis_rag_3shot.py 42
-
-# Bio-Medical-LLaMA-3-8B
-python Context_learning/Predict/Llema3_8b/Metastasis/A_metastasis_rag_3shot.py 42
-
-# Meta-Llama-3-70B-Instruct
-python Context_learning/Predict/Llema3_70b/Metastasis/A_metastasis_rag_3shot.py 42
-```
-
-### Fine-Tuning Pipeline (QLoRA)
-
-For fine-tuning experiments with parameter-efficient adaptation:
-
-#### Step 1: Load and Prepare Training Data
-```bash
-# Load MIMIC-IV discharge summaries and create train/validation splits
-# Balances classes and formats data for instruction tuning
-python fine_tune/01_load_data.py
-```
-
-
-#### Step 2: Fine-Tune Model with QLoRA
-```bash
-# Fine-tune Gemma-7B using QLoRA (4-bit quantization + LoRA adapters)
-# Training time: ~2-4 hours on a single A100 GPU
-python fine_tune/02_model_finetuning.py
-```
-
-
-#### Step 3: Run Inference with Fine-Tuned Model
-```bash
-# Classify test set using fine-tuned model
-# Output: classification results with predictions
-python fine_tune/03_classification.py
-```
-
-
-### Generate Research Subset (Optional)
-
-For creating balanced subsets for pilot studies:
-
-```bash
-# Generate stratified subset from full MIMIC-IV dataset
-# Creates subset with balanced class distributions
-python Context_learning/Process/Subset/P00_generate_subset.py
-```
-
-## Data
-
-This project uses discharge summaries from the MIMIC-IV database.
-
-
+Compliance and responsibility notes:
+- The package is a research and engineering tool, not a medical device.
+- Outputs are for research workflows and must not be used as standalone clinical decisions.
+- You are responsible for HIPAA/privacy compliance, data governance, and model access controls in your environment.

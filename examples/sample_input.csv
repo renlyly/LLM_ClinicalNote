@@ -1,0 +1,6 @@
+subject_id,hadm_id,text
+s1,h1,Patient has metastatic lesions in liver and lung.
+s2,h2,No evidence of metastasis during this admission.
+s3,h3,Insulin was started due to persistent hyperglycemia.
+s4,h4,Patient denies history of hypertension and blood pressure remains normal.
+s5,h5,Clinical history does not provide enough detail.

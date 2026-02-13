@@ -52,7 +52,7 @@ python -m precllm prompt \
   --note-text "Patient with known metastatic disease in liver."
 ```
 
-## Model Invocation (Where Models Are Called)
+## Model Invocation
 
 Model backend code location:
 - `src/precllm/llm_backends.py`

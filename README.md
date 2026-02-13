@@ -4,7 +4,7 @@
   <img src="assets/precllm-logo.png" alt="PrecLLM package icon" width="140" />
 </p>
 
-PrecLLM is a production-grade Python package for paper-oriented clinical note phenotyping workflows.
+PrecLLM is a  package for our paper-oriented clinical note phenotyping workflows.
 It is explicitly designed to preserve the core logic from the original project: preprocessing (`regex/rag/nonprocess`), prompt-controlled inference (`0/3/6-shot`), and model-specific execution.
 
 ## Workflow Diagram
@@ -171,12 +171,6 @@ LLM_Note/
 - README.md
 ```
 
-## Quality and Governance
-
-- Strong type hints across package code.
-- Prompt logic and model invocation are separated and auditable.
-- Input schema is validated before execution.
-- Unit tests cover config, CLI, and pipeline behavior.
 
 ## License and Compliance
 

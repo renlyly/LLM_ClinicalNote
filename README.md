@@ -70,12 +70,6 @@ python Context_learning/Predict/Gemma_7b/Metastasis/A_metastasis_rag_3shot.py --
 
 ### Alternative Configurations
 
-Set a seed once:
-
-```bash
-seed=100
-```
-
 **Different preprocessing strategies:**
 ```bash
 # No preprocessing (full discharge summary)
@@ -112,7 +106,7 @@ For creating balanced subsets for pilot studies:
 
 ```bash
 # Generate stratified subset from full MIMIC-IV dataset
-# Creates subset with balanced class distributions
+# Creates a subset with balanced class distributions
 python Context_learning/Process/Subset/P00_generate_subset.py
 ```
 

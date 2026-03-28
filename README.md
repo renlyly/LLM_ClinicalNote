@@ -1,47 +1,21 @@
-# PrecLLM
+\# PrecLLM
 
-<p align="center">
-  <img src="assets/precllm-logo.png" alt="PrecLLM package icon" width="140" />
-</p>
+**GitHub Repository:** [https://github.com/renlyly/LLM_ClinicalNote](https://github.com/renlyly/LLM_ClinicalNote)   
 
-PrecLLM is a  package for our paper-oriented clinical note phenotyping workflows.
-It is explicitly designed to preserve the core logic from the original project: preprocessing (`regex/rag/nonprocess`), prompt-controlled inference (`0/3/6-shot`), and model-specific execution.
+**Preprint (arXiv):** [https://arxiv.org/abs/2412.02868](https://arxiv.org/abs/2412.02868)
 
-## Workflow Diagram
+PrecLLM is a dedicated package built to support paper-oriented clinical note phenotyping workflows. It is engineered to seamlessly preserve the original project's core logic, encompassing data preprocessing strategies (`regex`, `rag`, or `nonprocess`), prompt-controlled inference (`zero`, `three`, or `six-shot`), and model-specific execution
+
+## Architecture & Workflow
 
 <p align="center">
   <img src="assets/precllm-workflow-diagram.png" alt="PrecLLM workflow diagram" width="960" />
 </p>
+The pipeline ingests note-level CSV data and applies your chosen preprocessing strategy (`regex`, `rag`, or `nonprocess`). It then constructs phenotype-specific prompts using zero, three, or six-shot configurations. These prompts are routed to either a deterministic `rule` baseline or a `transformers` model for inference. The final output consists of a preprocessed CSV file.
 
-Diagram legend:
-- Input: note-level CSV data.
-- Preprocess: `regex`, `rag`, or `nonprocess`.
-- Prompting: phenotype-specific prompts with `0`, `3`, or `6` shot settings.
-- Inference backend: `rule` baseline or `transformers` model inference.
-- Outputs: preprocessed CSV, predictions CSV, and manifest JSON.
+## Prompt Generation System
 
-## What Was Restored and Deepened
-
-- Prompt system is now first-class and explicit.
-- Model invocation path is explicit and configurable.
-- Multi-ID schema support is explicit (`subject_id`, `hadm_id`, etc.).
-- Output preserves source identifiers for audit and downstream merge.
-
-## Prompt System (Core Control)
-
-Prompt source code location:
-- `src/precllm/prompting.py`
-
-This module contains:
-- phenotype-specific task templates (`metastasis`, `insulin`, `hypertension`)
-- shot-aware example selection (`0`, `3`, `6`)
-- deterministic prompt rendering (`build_prompt`)
-
-Legacy alignment:
-- Example counts follow the original script style:
-  - `shot=0` -> 3 examples
-  - `shot=3` -> 9 examples
-  - `shot=6` -> 18 examples
+Located within `src/precllm/prompting.py`, this module governs deterministic prompt generation using the `build_prompt` function. It includes phenotype-specific task templates for metastasis, insulin, and hypertension. To maintain alignment with legacy scripts, the module relies on a shot-aware selection logic that scales example counts based on the requested parameter: 0 shots load 3 examples, 3 shots load 9, and 6 shots load 18.
 
 Inspect a prompt directly:
 
@@ -52,19 +26,14 @@ python -m precllm prompt \
   --note-text "Patient with known metastatic disease in liver."
 ```
 
-## Model Invocation
+## Model Backend & Inference
 
-Model backend code location:
-- `src/precllm/llm_backends.py`
+PrecLLM orchestrates predictions through `src/precllm/predict.py`, pulling from backend logic defined in `src/precllm/llm_backends.py`. The system supports two primary inference modes:
 
-Prediction orchestration:
-- `src/precllm/predict.py`
+- **`rule`**: A deterministic baseline that requires no external LLM dependencies.
+- **`transformers`**: Hugging Face model inference utilizing `AutoTokenizer` and `AutoModelForCausalLM`.
 
-Supported inference backends:
-- `rule`: deterministic baseline (no external LLM dependency)
-- `transformers`: Hugging Face model inference via `AutoTokenizer` and `AutoModelForCausalLM`
-
-Install LLM runtime dependencies when using `transformers` backend:
+When using the `transformers` backend, ensure the LLM runtime dependencies are installed:
 
 ```bash
 python -m pip install -e '.[llm]'
@@ -81,9 +50,7 @@ Override model path when needed:
 
 ## Data Contract and Schema Flexibility
 
-Minimum required data:
-- one text column for clinical notes (`--text-column`)
-- one or more ID columns (`--id-column` or `--id-columns`)
+The package requires a minimal data schema: at least one text column designated for clinical notes (`--text-column`) and one or more identifier columns (`--id-column` or `--id-columns`). All provided ID columns are validated prior to execution and preserved in the final outputs. Furthermore, the system automatically generates a stable composite key, `record_id`, from these provided IDs.
 
 Single-ID example:
 
@@ -115,20 +82,17 @@ python -m precllm run \
   --inference-backend transformers
 ```
 
-How it is handled:
-- all ID columns are validated before run
-- IDs are preserved in outputs
-- `record_id` is generated as a stable composite key from provided IDs
+
 
 ## CLI Reference
 
-List supported options and defaults:
+You can list all supported options and system defaults by running:
 
 ```bash
 python -m precllm catalog
 ```
 
-Dry-run with full resolved config and prompt metadata:
+To verify your configuration without triggering a full inference run, use the `--dry-run` flag to resolve the config and prompt metadata:
 
 ```bash
 python -m precllm run \
@@ -144,20 +108,13 @@ python -m precllm run \
   --dry-run
 ```
 
-## Output Contract
+## Output Specifications
 
-Each run generates:
-- `<run_stem>.preprocessed.csv`
-- `<run_stem>.predictions.csv`
-- `<run_stem>.manifest.json`
+Every execution generates three primary files formatted with a descriptive run stem (`{model}_{phenotype}_{preprocess}_{shot}shot_seed{seed}`):
 
-`<run_stem>` format:
-- `{model}_{phenotype}_{preprocess}_{shot}shot_seed{seed}`
-
-The output CSV files include:
-- original ID columns
-- `record_id`
-- prediction fields (`label`, `evidence`, `raw_response`)
+- **`<run_stem>.preprocessed.csv`**: The processed input data.
+- **`<run_stem>.predictions.csv`**: Contains the original ID columns, the generated `record_id`, and key prediction fields including `label`, `evidence`, and `raw_response`.
+- **`<run_stem>.manifest.json`**: Metadata tracking the run details.
 
 ## Package Layout
 
@@ -176,7 +133,4 @@ LLM_Note/
 
 This project is licensed under the MIT License (`LICENSE`).
 
-Compliance and responsibility notes:
-- The package is a research and engineering tool, not a medical device.
-- Outputs are for research workflows and must not be used as standalone clinical decisions.
-- You are responsible for HIPAA/privacy compliance, data governance, and model access controls in your environment.
+**Please note:** PrecLLM is an engineering tool designed strictly for research workflows, not a medical device. Outputs must not be used as standalone clinical decisions. Users are fully responsible for maintaining HIPAA and privacy compliance, data governance, and secure model access controls within their own environments.

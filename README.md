@@ -128,9 +128,12 @@ LLM_Note/
 - README.md
 ```
 
+ 
 
-## License and Compliance
+## Copyright and Use Notice
 
-This project is licensed under the MIT License (`LICENSE`).
+© 2026, The University of North Carolina at Chapel Hill. Permission is granted to reproduce, display, and distribute this repository for not-for-profit research and educational use only. All other rights reserved. For commercial licensing opportunities, please contact otc@unc.edu.
 
-**Please note:** PrecLLM is an engineering tool designed strictly for research workflows, not a medical device. Outputs must not be used as standalone clinical decisions. Users are fully responsible for maintaining HIPAA and privacy compliance, data governance, and secure model access controls within their own environments.
+## Research Use Disclaimer
+
+PrecLLM is an engineering tool intended for research workflows only and is not a medical device. Outputs must not be used as standalone clinical decisions. Users are responsible for maintaining HIPAA and privacy compliance, data governance, and secure model access controls within their own environments.
